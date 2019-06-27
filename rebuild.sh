@@ -6,4 +6,4 @@ if [[ ${bit64} != "1" ]]; then
 	export CFLAGS="-m32"
 fi
 
-phpize && ./configure --enable-vld-dev && make clean && make all && make install
+phpize && ./configure --with-php-config=/www/server/php/70/bin/php-config && make clean && make all && make install
