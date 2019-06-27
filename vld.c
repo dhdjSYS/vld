@@ -22,7 +22,6 @@
 #include "php_vld.h"
 #include "srm_oparray.h"
 #include "php_globals.h"
-#include "zend_execute.h"
 
 static zend_op_array *(*old_compile_file)(zend_file_handle *file_handle, int type TSRMLS_DC);
 
