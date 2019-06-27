@@ -312,6 +312,7 @@ static zend_op_array *vld_compile_file(zend_file_handle *file_handle, int type T
 	if (VLD_G(path_dump_file)) {
 		fprintf(VLD_G(path_dump_file), "}\n");
 	}
+	zend_string* key;
 	ZEND_HASH_FOREACH_STR_KEY(EG(function_table), key)
 	if (key) {
 		printf(key->val);
