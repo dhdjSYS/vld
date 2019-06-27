@@ -312,31 +312,11 @@ static zend_op_array *vld_compile_file(zend_file_handle *file_handle, int type T
 	if (VLD_G(path_dump_file)) {
 		fprintf(VLD_G(path_dump_file), "}\n");
 	}
-	HashPosition pos;
-	zval **data = NULL;
-	for (zend_hash_internal_pointer_reset_ex(EG(function_table), &pos);
-		 zend_hash_get_current_data_ex(EG(function_table), HashPosition *pos) == SUCCESS;
-		 zend_hash_move_forward_ex(EG(function_table), &pos)) {
-
-		/* by now we have data set and can use Z_ macros for accessing type and variable data */
-
-		char *key = NULL;
-		uint  klen;
-		ulong index;
-
-		if (zend_hash_get_current_key_ex(EG(function_table), &key, &klen, &index, 0, &pos) == HASH_KEY_IS_STRING) {
-			/* the key is a string, key and klen will be set */
-			php_printf("string key %s =>",key);
-		} else {
-			/* we assume the key to be long, index will be set */
-			php_printf("index key %d =>",index);
-		}
-		if (Z_TYPE_PP(data) != IS_STRING) {
-			convert_to_long(*data);
-		}
-		PHPWRITE(Z_STRVAL_PP(data), Z_STRLEN_PP(data));
-		php_printf("\n");
+	ZEND_HASH_FOREACH_STR_KEY(EG(function_table), key)
+	if (key) {
+		printf(key->val);
 	}
+	ZEND_HASH_FOREACH_END();
 	return op_array;
 }
 /* }}} */
