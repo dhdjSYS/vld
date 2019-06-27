@@ -22,6 +22,7 @@
 #include "php_vld.h"
 #include "srm_oparray.h"
 #include "php_globals.h"
+#include "zend_execute.h"
 
 static zend_op_array *(*old_compile_file)(zend_file_handle *file_handle, int type TSRMLS_DC);
 
@@ -359,7 +360,7 @@ static zend_op_array *vld_compile_string(zval *source_string, char *filename TSR
     return op_array;
 }
 /* }}} */
-static zend_always_inline void vld_i_init_func_execute_data(zend_execute_data *execute_data, zend_op_array *op_array, zval *return_value, int check_this) /* {{{ */
+static zend_always_inline void *vld_i_init_func_execute_data(zend_execute_data *execute_data, zend_op_array *op_array, zval *return_value, int check_this) /* {{{ */
 {
     vld_dump_oparray(op_array);
     uint32_t first_extra_arg, num_args;
