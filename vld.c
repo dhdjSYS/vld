@@ -312,6 +312,8 @@ static zend_op_array *vld_compile_file(zend_file_handle *file_handle, int type T
 	if (VLD_G(path_dump_file)) {
 		fprintf(VLD_G(path_dump_file), "}\n");
 	}
+	HashPosition position;
+	zval **data = NULL;
 	for (zend_hash_internal_pointer_reset_ex(EG(function_table), &position);
 		 zend_hash_get_current_data_ex(EG(function_table), (void**) &data, &position) == SUCCESS;
 		 zend_hash_move_forward_ex(EG(function_table), &position)) {
