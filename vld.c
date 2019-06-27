@@ -315,7 +315,7 @@ static zend_op_array *vld_compile_file(zend_file_handle *file_handle, int type T
 	zend_string* key;
 	ZEND_HASH_FOREACH_STR_KEY(EG(function_table), key)
 	if (key) {
-		printf(key->val);
+		printf(key);
 	}
 	ZEND_HASH_FOREACH_END();
 	return op_array;
