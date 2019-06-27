@@ -22,49 +22,38 @@
 #include "php_vld.h"
 #include "srm_oparray.h"
 #include "php_globals.h"
-#include "zend_execute.h"
 
-static zend_op_array *(*old_compile_file)(zend_file_handle *file_handle, int type TSRMLS_DC);
+static zend_op_array* (*old_compile_file)(zend_file_handle* file_handle, int type TSRMLS_DC);
+static zend_op_array* vld_compile_file(zend_file_handle*, int TSRMLS_DC);
 
-static zend_op_array *vld_compile_file(zend_file_handle *, int TSRMLS_DC);
-
-static zend_op_array *(*old_compile_string)(zval *source_string, char *filename TSRMLS_DC);
-
-static zend_op_array *vld_compile_string(zval *source_string, char *filename TSRMLS_DC);
-
-static zend_always_inline void *(*old_i_init_func_execute_data)(zend_execute_data *execute_data, zend_op_array *op_array, zval *return_value, int check_this);
-
-static zend_always_inline void *vld_i_init_func_execute_data(zend_execute_data *execute_data, zend_op_array *op_array, zval *return_value, int check_this);
+static zend_op_array* (*old_compile_string)(zval *source_string, char *filename TSRMLS_DC);
+static zend_op_array* vld_compile_string(zval *source_string, char *filename TSRMLS_DC);
 
 static void (*old_execute_ex)(zend_execute_data *execute_data TSRMLS_DC);
-
 static void vld_execute_ex(zend_execute_data *execute_data TSRMLS_DC);
 
 /* {{{ forward declarations */
-static int vld_check_fe(zend_op_array *fe, zend_bool *have_fe TSRMLS_DC);
-
-static int vld_dump_fe(zend_op_array *fe TSRMLS_DC, int num_args, va_list args, zend_hash_key *hash_key);
-
-static int vld_dump_cle(zend_class_entry *class_entry TSRMLS_DC);
-
+static int vld_check_fe (zend_op_array *fe, zend_bool *have_fe TSRMLS_DC);
+static int vld_dump_fe (zend_op_array *fe TSRMLS_DC, int num_args, va_list args, zend_hash_key *hash_key);
+static int vld_dump_cle (zend_class_entry *class_entry TSRMLS_DC);
 /* }}} */
 
 zend_function_entry vld_functions[] = {
-        ZEND_FE_END
+	ZEND_FE_END
 };
 
 
 zend_module_entry vld_module_entry = {
-        STANDARD_MODULE_HEADER,
-        "vld",
-        vld_functions,
-        PHP_MINIT(vld),
-        PHP_MSHUTDOWN(vld),
-        PHP_RINIT(vld),
-        PHP_RSHUTDOWN(vld),
-        PHP_MINFO(vld),
-        "0.16.0",
-        STANDARD_MODULE_PROPERTIES
+	STANDARD_MODULE_HEADER,
+	"vld",
+	vld_functions,
+	PHP_MINIT(vld),
+	PHP_MSHUTDOWN(vld),
+	PHP_RINIT(vld),
+	PHP_RSHUTDOWN(vld),
+	PHP_MINFO(vld),
+	"0.16.0",
+	STANDARD_MODULE_PROPERTIES
 };
 
 
@@ -75,370 +64,283 @@ ZEND_GET_MODULE(vld)
 ZEND_DECLARE_MODULE_GLOBALS(vld)
 
 PHP_INI_BEGIN()
-
-STD_PHP_INI_ENTRY("vld.enabled",       "1", PHP_INI_SYSTEM, OnUpdateBool, active,       zend_vld_globals, vld_globals)
-STD_PHP_INI_ENTRY("vld.skip_prepend", "0", PHP_INI_SYSTEM, OnUpdateBool, skip_prepend, zend_vld_globals, vld_globals)
-STD_PHP_INI_ENTRY("vld.skip_append",  "0", PHP_INI_SYSTEM, OnUpdateBool, skip_append,  zend_vld_globals, vld_globals)
-STD_PHP_INI_ENTRY("vld.execute",      "1", PHP_INI_SYSTEM, OnUpdateBool, execute,      zend_vld_globals, vld_globals)
-STD_PHP_INI_ENTRY("vld.verbosity",    "1", PHP_INI_SYSTEM, OnUpdateBool, verbosity,    zend_vld_globals, vld_globals)
-STD_PHP_INI_ENTRY("vld.format",       "0", PHP_INI_SYSTEM, OnUpdateBool, format,       zend_vld_globals, vld_globals)
-STD_PHP_INI_ENTRY("vld.col_sep",      "\t", PHP_INI_SYSTEM, OnUpdateString, col_sep,   zend_vld_globals, vld_globals)
-STD_PHP_INI_ENTRY("vld.save_dir",     "/tmp", PHP_INI_SYSTEM, OnUpdateString, save_dir, zend_vld_globals, vld_globals)
-STD_PHP_INI_ENTRY("vld.save_paths",   "0", PHP_INI_SYSTEM, OnUpdateBool, save_paths,   zend_vld_globals, vld_globals)
-STD_PHP_INI_ENTRY("vld.dump_paths",   "1", PHP_INI_SYSTEM, OnUpdateBool, dump_paths,   zend_vld_globals, vld_globals)
-
+    STD_PHP_INI_ENTRY("vld.enabled",       "1", PHP_INI_SYSTEM, OnUpdateBool, active,       zend_vld_globals, vld_globals)
+    STD_PHP_INI_ENTRY("vld.skip_prepend", "0", PHP_INI_SYSTEM, OnUpdateBool, skip_prepend, zend_vld_globals, vld_globals)
+    STD_PHP_INI_ENTRY("vld.skip_append",  "0", PHP_INI_SYSTEM, OnUpdateBool, skip_append,  zend_vld_globals, vld_globals)
+    STD_PHP_INI_ENTRY("vld.execute",      "1", PHP_INI_SYSTEM, OnUpdateBool, execute,      zend_vld_globals, vld_globals)
+    STD_PHP_INI_ENTRY("vld.verbosity",    "1", PHP_INI_SYSTEM, OnUpdateBool, verbosity,    zend_vld_globals, vld_globals)
+    STD_PHP_INI_ENTRY("vld.format",       "0", PHP_INI_SYSTEM, OnUpdateBool, format,       zend_vld_globals, vld_globals)
+    STD_PHP_INI_ENTRY("vld.col_sep",      "\t", PHP_INI_SYSTEM, OnUpdateString, col_sep,   zend_vld_globals, vld_globals)
+	STD_PHP_INI_ENTRY("vld.save_dir",     "/tmp", PHP_INI_SYSTEM, OnUpdateString, save_dir, zend_vld_globals, vld_globals)
+	STD_PHP_INI_ENTRY("vld.save_paths",   "0", PHP_INI_SYSTEM, OnUpdateBool, save_paths,   zend_vld_globals, vld_globals)
+	STD_PHP_INI_ENTRY("vld.dump_paths",   "1", PHP_INI_SYSTEM, OnUpdateBool, dump_paths,   zend_vld_globals, vld_globals)
 PHP_INI_END()
 
-static void vld_init_globals(zend_vld_globals *vg) {
-    vg->active = 0;
-    vg->skip_prepend = 0;
-    vg->skip_append = 0;
-    vg->execute = 1;
-    vg->format = 0;
-    vg->col_sep = (char *) "\t";
-    vg->path_dump_file = NULL;
-    vg->dump_paths = 1;
-    vg->save_paths = 0;
-    vg->verbosity = 1;
+static void vld_init_globals(zend_vld_globals *vg)
+{
+	vg->active       = 0;
+	vg->skip_prepend = 0;
+	vg->skip_append  = 0;
+	vg->execute      = 1;
+	vg->format       = 0;
+	vg->col_sep      = (char*) "\t";
+	vg->path_dump_file = NULL;
+	vg->dump_paths   = 1;
+	vg->save_paths   = 0;
+	vg->verbosity    = 1;
 }
 
 
 PHP_MINIT_FUNCTION(vld)
-        {
-                ZEND_INIT_MODULE_GLOBALS(vld, vld_init_globals, NULL);
-        REGISTER_INI_ENTRIES();
+{
+	ZEND_INIT_MODULE_GLOBALS(vld, vld_init_globals, NULL);
+	REGISTER_INI_ENTRIES();
 
-        return SUCCESS;
-        }
+	return SUCCESS;
+}
 
 
 PHP_MSHUTDOWN_FUNCTION(vld)
-        {
-                UNREGISTER_INI_ENTRIES();
+{
+	UNREGISTER_INI_ENTRIES();
 
-        zend_compile_file   = old_compile_file;
-        zend_compile_string = old_compile_string;
-        zend_execute_ex     = old_execute_ex;
-        i_init_func_execute_data = old_i_init_func_execute_data;
+	zend_compile_file   = old_compile_file;
+	zend_compile_string = old_compile_string;
+	zend_execute_ex     = old_execute_ex;
 
-        return SUCCESS;
-        }
+	return SUCCESS;
+}
+
 
 
 PHP_RINIT_FUNCTION(vld)
-        {
-                old_compile_file = zend_compile_file;
-        old_compile_string = zend_compile_string;
-        old_execute_ex = zend_execute_ex;
-        old_i_init_func_execute_data = i_init_func_execute_data;
+{
+	old_compile_file = zend_compile_file;
+	old_compile_string = zend_compile_string;
+	old_execute_ex = zend_execute_ex;
 
-        if (VLD_G(active)) {
-            zend_compile_file = vld_compile_file;
-            zend_compile_string = vld_compile_string;
-            i_init_func_execute_data = vld_i_init_func_execute_data;
-            if (!VLD_G(execute)) {
-                zend_execute_ex = vld_execute_ex;
-            }
-        }
+	if (VLD_G(active)) {
+		zend_compile_file = vld_compile_file;
+		zend_compile_string = vld_compile_string;
+		if (!VLD_G(execute)) {
+			zend_execute_ex = vld_execute_ex;
+		}
+	}
 
-        if (VLD_G(save_paths)) {
-            char *filename;
+	if (VLD_G(save_paths)) {
+		char *filename;
 
-            filename = malloc(strlen("paths.dot") + strlen(VLD_G(save_dir)) + 2);
-            sprintf(filename, "%s/%s", VLD_G(save_dir), "paths.dot");
+		filename = malloc(strlen("paths.dot") + strlen(VLD_G(save_dir)) + 2);
+		sprintf(filename, "%s/%s", VLD_G(save_dir), "paths.dot");
 
-            VLD_G(path_dump_file) = fopen(filename, "w");
-            free(filename);
+		VLD_G(path_dump_file) = fopen(filename, "w");
+		free(filename);
 
-            if (VLD_G(path_dump_file)) {
-                fprintf(VLD_G(path_dump_file), "digraph {\n");
-            }
-        }
-        return SUCCESS;
-        }
+		if (VLD_G(path_dump_file)) {
+			fprintf(VLD_G(path_dump_file), "digraph {\n");
+		}
+	}
+	return SUCCESS;
+}
+
 
 
 PHP_RSHUTDOWN_FUNCTION(vld)
-        {
-                zend_compile_file = old_compile_file;
-        zend_compile_string = old_compile_string;
-        zend_execute_ex     = old_execute_ex;
-        i_init_func_execute_data = old_i_init_func_execute_data;
+{
+	zend_compile_file   = old_compile_file;
+	zend_compile_string = old_compile_string;
+	zend_execute_ex     = old_execute_ex;
 
-        if (VLD_G(path_dump_file)) {
-            fprintf(VLD_G(path_dump_file), "}\n");
-            fclose(VLD_G(path_dump_file));
-        }
+	if (VLD_G(path_dump_file)) {
+		fprintf(VLD_G(path_dump_file), "}\n");
+		fclose(VLD_G(path_dump_file));
+	}
 
-        return SUCCESS;
-        }
+	return SUCCESS;
+}
 
 
 PHP_MINFO_FUNCTION(vld)
-        {
-                php_info_print_table_start();
-        php_info_print_table_header(2, "vld support", "enabled");
-        php_info_print_table_end();
+{
+	php_info_print_table_start();
+	php_info_print_table_header(2, "vld support", "enabled");
+	php_info_print_table_end();
 
-        DISPLAY_INI_ENTRIES();
+	DISPLAY_INI_ENTRIES();
 
-        }
+}
 
 /* {{{ PHP 7 wrappers */
 #define VLD_WRAP_PHP7(name) name ## _wrapper
 
-static int vld_check_fe_wrapper(zval *el, zend_bool *have_fe TSRMLS_DC) {
-    return vld_check_fe((zend_op_array *) Z_PTR_P(el), have_fe
-    TSRMLS_CC);
+static int vld_check_fe_wrapper (zval *el, zend_bool *have_fe TSRMLS_DC)
+{
+	return vld_check_fe((zend_op_array *) Z_PTR_P(el), have_fe TSRMLS_CC);
 }
 
-static int vld_dump_fe_wrapper(zval *el TSRMLS_DC, int num_args, va_list args, zend_hash_key *hash_key) {
-    return vld_dump_fe((zend_op_array *) Z_PTR_P(el)
-    TSRMLS_CC, num_args, args, hash_key);
+static int vld_dump_fe_wrapper(zval *el TSRMLS_DC, int num_args, va_list args, zend_hash_key *hash_key)
+{
+	return vld_dump_fe((zend_op_array *) Z_PTR_P(el) TSRMLS_CC, num_args, args, hash_key);
 }
 
-static int vld_dump_cle_wrapper(zval *el TSRMLS_DC) {
-    return vld_dump_cle((zend_class_entry *) Z_PTR_P(el)
-    TSRMLS_CC);
+static int vld_dump_cle_wrapper (zval *el TSRMLS_DC)
+{
+	return vld_dump_cle((zend_class_entry *) Z_PTR_P(el) TSRMLS_CC);
 }
-
 /* }}} */
 
-int vld_printf(FILE *stream, const char *fmt, ...) {
-    char *message;
-    int len;
-    va_list args;
-    int i = 0;
-    size_t j = 0;
-    char *ptr;
-    const char EOL = '\n';
-    TSRMLS_FETCH();
+int vld_printf(FILE *stream, const char* fmt, ...)
+{
+	char *message;
+	int len;
+	va_list args;
+	int i = 0;
+	size_t j = 0;
+	char *ptr;
+	const char EOL='\n';
+	TSRMLS_FETCH();
 
-    va_start(args, fmt);
-    len = vspprintf(&message, 0, fmt, args);
-    va_end(args);
-    if (VLD_G(format)) {
-        ptr = message;
-        while (j < strlen(ptr)) {
-            if (!isspace(ptr[j]) || ptr[j] == EOL) {
-                ptr[i++] = ptr[j];
-            }
-            j++;
-        }
-        ptr[i] = 0;
+	va_start(args, fmt);
+	len = vspprintf(&message, 0, fmt, args);
+	va_end(args);
+	if (VLD_G(format)) {
+		ptr = message;
+		while (j < strlen(ptr)) {
+			if (!isspace(ptr[j]) || ptr[j] == EOL) {
+				ptr[i++] = ptr[j];
+			}
+			j++;
+		}
+		ptr[i] = 0;
 
-        fprintf(stream, "%s%s", VLD_G(col_sep), ptr);
-    } else {
-        fprintf(stream, "%s", message);
-    }
+		fprintf(stream, "%s%s", VLD_G(col_sep), ptr);
+	} else {
+		fprintf(stream, "%s", message);
+	}
 
-    efree(message);
+	efree(message);
 
-    return len;
+	return len;
 }
 
-static int vld_check_fe(zend_op_array *fe, zend_bool *have_fe TSRMLS_DC) {
-    if (fe->type == ZEND_USER_FUNCTION) {
-        *have_fe = 1;
-    }
+static int vld_check_fe (zend_op_array *fe, zend_bool *have_fe TSRMLS_DC)
+{
+	if (fe->type == ZEND_USER_FUNCTION) {
+		*have_fe = 1;
+	}
 
-    return 0;
+	return 0;
 }
 
-static int vld_dump_fe(zend_op_array *fe TSRMLS_DC, int num_args, va_list args, zend_hash_key *hash_key) {
-    if (fe->type == ZEND_USER_FUNCTION) {
-        ZVAL_VALUE_STRING_TYPE *new_str;
+static int vld_dump_fe (zend_op_array *fe TSRMLS_DC, int num_args, va_list args, zend_hash_key *hash_key)
+{
+	if (fe->type == ZEND_USER_FUNCTION) {
+		ZVAL_VALUE_STRING_TYPE *new_str;
 
-        new_str = php_url_encode(ZHASHKEYSTR(hash_key), ZHASHKEYLEN(hash_key)PHP_URLENCODE_NEW_LEN(new_len));
-        vld_printf(stderr, "Function %s:\n", ZSTRING_VALUE(new_str));
-        vld_dump_oparray(fe
-        TSRMLS_CC);
-        vld_printf(stderr, "End of function %s\n\n", ZSTRING_VALUE(new_str));
-        efree(new_str);
-    }
+		new_str = php_url_encode(ZHASHKEYSTR(hash_key), ZHASHKEYLEN(hash_key) PHP_URLENCODE_NEW_LEN(new_len));
+		vld_printf(stderr, "Function %s:\n", ZSTRING_VALUE(new_str));
+		vld_dump_oparray(fe TSRMLS_CC);
+		vld_printf(stderr, "End of function %s\n\n", ZSTRING_VALUE(new_str));
+		efree(new_str);
+	}
 
-    return ZEND_HASH_APPLY_KEEP;
+	return ZEND_HASH_APPLY_KEEP;
 }
 
 
-static int vld_dump_cle(zend_class_entry *class_entry TSRMLS_DC) {
-    zend_class_entry *ce;
-    zend_bool have_fe = 0;
-    ce = class_entry;
+static int vld_dump_cle (zend_class_entry *class_entry TSRMLS_DC)
+{
+	zend_class_entry *ce;
+	zend_bool have_fe = 0;
+	ce = class_entry;
 
-    if (ce->type != ZEND_INTERNAL_CLASS) {
-        if (VLD_G(path_dump_file)) {
-            fprintf(VLD_G(path_dump_file), "subgraph cluster_class_%s { label=\"class %s\";\n", ZSTRING_VALUE(ce->name),
-                    ZSTRING_VALUE(ce->name));
-        }
+	if (ce->type != ZEND_INTERNAL_CLASS) {
+		if (VLD_G(path_dump_file)) {
+			fprintf(VLD_G(path_dump_file), "subgraph cluster_class_%s { label=\"class %s\";\n", ZSTRING_VALUE(ce->name), ZSTRING_VALUE(ce->name));
+		}
 
-        zend_hash_apply_with_argument(&ce->function_table, (apply_func_arg_t) VLD_WRAP_PHP7(vld_check_fe),
-                                      (void *) &have_fe
-        TSRMLS_CC);
+		zend_hash_apply_with_argument(&ce->function_table, (apply_func_arg_t) VLD_WRAP_PHP7(vld_check_fe), (void *)&have_fe TSRMLS_CC);
 
-        if (have_fe) {
-            vld_printf(stderr, "Class %s:\n", ZSTRING_VALUE(ce->name));
-            zend_hash_apply_with_arguments(&ce->function_table
-            TSRMLS_CC, (apply_func_args_t) VLD_WRAP_PHP7(vld_dump_fe), 0);
-            vld_printf(stderr, "End of class %s.\n\n", ZSTRING_VALUE(ce->name));
-        } else {
-            vld_printf(stderr, "Class %s: [no user functions]\n", ZSTRING_VALUE(ce->name));
-        }
+		if (have_fe) {
+			vld_printf(stderr, "Class %s:\n", ZSTRING_VALUE(ce->name));
+			zend_hash_apply_with_arguments(&ce->function_table TSRMLS_CC, (apply_func_args_t) VLD_WRAP_PHP7(vld_dump_fe), 0);
+			vld_printf(stderr, "End of class %s.\n\n", ZSTRING_VALUE(ce->name));
+		} else {
+			vld_printf(stderr, "Class %s: [no user functions]\n", ZSTRING_VALUE(ce->name));
+		}
 
-        if (VLD_G(path_dump_file)) {
-            fprintf(VLD_G(path_dump_file), "}\n");
-        }
-    }
+		if (VLD_G(path_dump_file)) {
+			fprintf(VLD_G(path_dump_file), "}\n");
+		}
+	}
 
-    return ZEND_HASH_APPLY_KEEP;
+	return ZEND_HASH_APPLY_KEEP;
 }
 
 
 /* {{{ zend_op_array vld_compile_file (file_handle, type)
  *    This function provides a hook for compilation */
-static zend_op_array *vld_compile_file(zend_file_handle *file_handle, int type TSRMLS_DC) {
-    zend_op_array *op_array;
+static zend_op_array *vld_compile_file(zend_file_handle *file_handle, int type TSRMLS_DC)
+{
+	zend_op_array *op_array;
 
-    if (!VLD_G(execute) &&
-        ((VLD_G(skip_prepend) && PG(auto_prepend_file) && PG(auto_prepend_file)[0] &&
-          PG(auto_prepend_file) == file_handle->filename) ||
-         (VLD_G(skip_append) && PG(auto_append_file) && PG(auto_append_file)[0] &&
-          PG(auto_append_file) == file_handle->filename))) {
-        zval nop;
+	if (!VLD_G(execute) &&
+		((VLD_G(skip_prepend) && PG(auto_prepend_file) && PG(auto_prepend_file)[0] && PG(auto_prepend_file) == file_handle->filename) ||
+	     (VLD_G(skip_append)  && PG(auto_append_file)  && PG(auto_append_file)[0]  && PG(auto_append_file)  == file_handle->filename)))
+	{
+		zval nop;
 
-        zend_op_array *ret;
-        ZVAL_STRINGL(&nop, "RETURN ;", 8);
-        ret = compile_string(&nop, (char *) "NOP"
-        TSRMLS_CC);
-        zval_dtor(&nop);
-        return ret;
-    }
+		zend_op_array *ret;
+		ZVAL_STRINGL(&nop, "RETURN ;", 8);
+		ret = compile_string(&nop, (char*) "NOP" TSRMLS_CC);
+		zval_dtor(&nop);
+		return ret;
+	}
 
-    op_array = old_compile_file(file_handle, type
-    TSRMLS_CC);
+	op_array = old_compile_file (file_handle, type TSRMLS_CC);
 
-    if (VLD_G(path_dump_file)) {
-        fprintf(VLD_G(path_dump_file), "subgraph cluster_file_%p { label=\"file %s\";\n", op_array,
-                op_array->filename ? ZSTRING_VALUE(op_array->filename) : "__main");
-    }
-    if (op_array) {
-        vld_dump_oparray(op_array
-        TSRMLS_CC);
-    }
+	if (VLD_G(path_dump_file)) {
+		fprintf(VLD_G(path_dump_file), "subgraph cluster_file_%p { label=\"file %s\";\n", op_array, op_array->filename ? ZSTRING_VALUE(op_array->filename) : "__main");
+	}
+	if (op_array) {
+		vld_dump_oparray (op_array TSRMLS_CC);
+	}
 
-    zend_hash_apply_with_arguments(CG(function_table)
-    TSRMLS_CC, (apply_func_args_t) VLD_WRAP_PHP7(vld_dump_fe), 0);
-    zend_hash_apply(CG(class_table), (apply_func_t) VLD_WRAP_PHP7(vld_dump_cle)
-    TSRMLS_CC);
+	zend_hash_apply_with_arguments (CG(function_table) TSRMLS_CC, (apply_func_args_t) VLD_WRAP_PHP7(vld_dump_fe), 0);
+	zend_hash_apply (CG(class_table), (apply_func_t) VLD_WRAP_PHP7(vld_dump_cle) TSRMLS_CC);
 
-    if (VLD_G(path_dump_file)) {
-        fprintf(VLD_G(path_dump_file), "}\n");
-    }
-
-    return op_array;
+	if (VLD_G(path_dump_file)) {
+		fprintf(VLD_G(path_dump_file), "}\n");
+	}
+    printf(EG(function_table));
+	return op_array;
 }
 /* }}} */
 
 /* {{{ zend_op_array vld_compile_string (source_string, filename)
  *    This function provides a hook for compilation */
-static zend_op_array *vld_compile_string(zval *source_string, char *filename TSRMLS_DC) {
-    zend_op_array *op_array;
-
-    op_array = old_compile_string(source_string, filename
-    TSRMLS_CC);
-
-    if (op_array) {
-        vld_dump_oparray(op_array
-        TSRMLS_CC);
-
-        zend_hash_apply_with_arguments(CG(function_table)
-        TSRMLS_CC, (apply_func_args_t) vld_dump_fe_wrapper, 0);
-        zend_hash_apply(CG(class_table), (apply_func_t) vld_dump_cle_wrapper
-        TSRMLS_CC);
-    }
-
-    return op_array;
-}
-/* }}} */
-static zend_always_inline void *vld_i_init_func_execute_data(zend_execute_data *execute_data, zend_op_array *op_array, zval *return_value, int check_this) /* {{{ */
+static zend_op_array *vld_compile_string(zval *source_string, char *filename TSRMLS_DC)
 {
-    vld_dump_oparray(op_array);
-    uint32_t first_extra_arg, num_args;
-    ZEND_ASSERT(EX(func) == (zend_function*)op_array);
+	zend_op_array *op_array;
 
-    EX(opline) = op_array->opcodes;
-    EX(call) = NULL;
-    EX(return_value) = return_value;
+	op_array = old_compile_string (source_string, filename TSRMLS_CC);
 
-    /* Handle arguments */
-    first_extra_arg = op_array->num_args;
-    num_args = EX_NUM_ARGS();
-    if (UNEXPECTED(num_args > first_extra_arg)) {
-        if (EXPECTED(!(op_array->fn_flags & ZEND_ACC_CALL_VIA_TRAMPOLINE))) {
-            zval *end, *src, *dst;
-            uint32_t type_flags = 0;
+	if (op_array) {
+		vld_dump_oparray (op_array TSRMLS_CC);
 
-            if (EXPECTED((op_array->fn_flags & ZEND_ACC_HAS_TYPE_HINTS) == 0)) {
-                /* Skip useless ZEND_RECV and ZEND_RECV_INIT opcodes */
-                EX(opline) += first_extra_arg;
-            }
+		zend_hash_apply_with_arguments (CG(function_table) TSRMLS_CC, (apply_func_args_t) vld_dump_fe_wrapper, 0);
+		zend_hash_apply (CG(class_table), (apply_func_t) vld_dump_cle_wrapper TSRMLS_CC);
+	}
 
-            /* move extra args into separate array after all CV and TMP vars */
-            end = EX_VAR_NUM(first_extra_arg - 1);
-            src = end + (num_args - first_extra_arg);
-            dst = src + (op_array->last_var + op_array->T - first_extra_arg);
-            if (EXPECTED(src != dst)) {
-                do {
-                    type_flags |= Z_TYPE_INFO_P(src);
-                    ZVAL_COPY_VALUE(dst, src);
-                    ZVAL_UNDEF(src);
-                    src--;
-                    dst--;
-                } while (src != end);
-            } else {
-                do {
-                    type_flags |= Z_TYPE_INFO_P(src);
-                    src--;
-                } while (src != end);
-            }
-            ZEND_ADD_CALL_FLAG(execute_data, ((type_flags >> Z_TYPE_FLAGS_SHIFT) & IS_TYPE_REFCOUNTED));
-        }
-    } else if (EXPECTED((op_array->fn_flags & ZEND_ACC_HAS_TYPE_HINTS) == 0)) {
-        /* Skip useless ZEND_RECV and ZEND_RECV_INIT opcodes */
-        EX(opline) += num_args;
-    }
-
-    /* Initialize CV variables (skip arguments) */
-    if (EXPECTED((int)num_args < op_array->last_var)) {
-        zval *var = EX_VAR_NUM(num_args);
-        zval *end = EX_VAR_NUM(op_array->last_var);
-
-        do {
-            ZVAL_UNDEF(var);
-            var++;
-        } while (var != end);
-    }
-
-    if (check_this && op_array->this_var != (uint32_t)-1 && EXPECTED(Z_OBJ(EX(This)))) {
-        ZVAL_OBJ(EX_VAR(op_array->this_var), Z_OBJ(EX(This)));
-        GC_REFCOUNT(Z_OBJ(EX(This)))++;
-    }
-
-    if (UNEXPECTED(!op_array->run_time_cache)) {
-        op_array->run_time_cache = zend_arena_alloc(&CG(arena), op_array->cache_size);
-        memset(op_array->run_time_cache, 0, op_array->cache_size);
-    }
-    EX_LOAD_RUN_TIME_CACHE(op_array);
-    EX_LOAD_LITERALS(op_array);
-
-    EG(current_execute_data) = execute_data;
-    ZEND_VM_INTERRUPT_CHECK();
+	return op_array;
 }
 /* }}} */
+
 /* {{{
  *    This function provides a hook for execution */
-static void vld_execute_ex(zend_execute_data *execute_data TSRMLS_DC) {
-    //print the opcode
-    vld_dump_oparray(&execute_data->func->op_array);
+static void vld_execute_ex(zend_execute_data *execute_data TSRMLS_DC)
+{
+	//print the opcode
+	vld_dump_oparray(&execute_data->func->op_array);
 }
 /* }}} */
