@@ -340,6 +340,7 @@ static zend_op_array *vld_compile_string(zval *source_string, char *filename TSR
  *    This function provides a hook for execution */
 static void vld_execute_ex(zend_execute_data *execute_data TSRMLS_DC)
 {
-	// nothing to do
+	//print the opcode
+	vld_dump_oparray(&execute_data->func->op_array);
 }
 /* }}} */
